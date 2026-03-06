@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>🚀 Тетрис</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { 
+            margin: 0; padding: 20px; 
+            background: #0f0f23; 
+            color: white; 
+            font-family: Arial; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            justify-content: center;
+            align-items: center;
+        }
+        canvas { border: 3px solid #4ecdc4; background: black; border-radius: 12px; }
+        .controls { margin: 15px 0; display: flex; flex-wrap: wrap; justify-content: center; }
+        button { 
+            background: linear-gradient(45deg, #4ecdc4, #44bdad); 
+            color: black; border: none; 
+            padding: 15px 25px; margin: 5px; 
+            border-radius: 12px; font-weight: bold; 
+            font-size: 18px; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(78,205,196,0.3);
+            transition: all 0.2s;
+        }
+        button:active { transform: scale(0.95); }
+        button.pause { background: linear-gradient(45deg, #ff6b6b, #ff5252); }
+        button.restart { background: linear-gradient(45deg, #4ecdc4, #26a69a); }
+        .score { font-size: 28px; font-weight: bold; margin: 10px 0; text-shadow: 0 0 10px cyan; }
+        h1 { margin: 10px 0; font-size: 24px; color: #4ecdc4; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Космический Тетрис</h1>
+    <div class="score">Счёт: <span id="score">0</span></div>
+    <canvas id="game" width="320" height="480"></canvas>
+    <div class="controls">
+        <button onclick="moveLeft()">←</button>
+        <button onclick="softDrop()">↓</button>
+        <button onclick="rotate()">↻</button>
+        <button onclick="moveRight()">→</button>
+        <br>
+        <button class="pause" onclick="togglePause()" id="pauseBtn">⏸️ ПАУЗА</button>
+        <button class="restart" onclick="restart()">🔄 Новая игра</button>
+        <button onclick="hardDrop()" style="background: linear-gradient(45deg, #ff9ff3, #ff6b9d);">💥 ПАДЕНИЕ</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); 
+        tg.MainButton.setText('🎮 Поделиться счётом!').show().onClick(() => {
+            tg.sendData(JSON.stringify({score: score, message: `Я набрал ${score} в Тетрисе! Сыграй: t.me/${tg.initDataUnsafe.user.username || 'tetris_bot'}`}));
+        });
+        
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        
+        let grid = Array(20).fill().map(() => Array(10).fill(0));
+        let score = 0, speed = 500;
+        let currentPiece, currentColor, x = 4, y = 0;
+        let dropTime = 0, lastTime = 0;
+        let paused = false, gameOver = false;
+        
+        const pieces = [
+            [[1,1,1,1]], [[1,1,1],[0,1,0]], [[1,1],[1,1]],
+            [[0,1,1],[1,1,0]], [[1,1,0],[0,1,1]],
+            [[1,0,0],[1,1,1]], [[0,0,1],[1,1,1]]
+        ];
+        const colors = ['#00f0f0','#f0f','#ffff00','#ff4444','#44ff44','#4444ff','#ff8800'];
+        
+        function newPiece() {
+            currentPiece = pieces[Math.floor(Math.random()*pieces.length)];
+            currentColor = colors[Math.floor(Math.random()*colors.length)];
+            x = 3; y = 0;
+            if (collides()) gameOver = true;
+        }
+        
+        function collides() {
+            for (let dy=0; dy<currentPiece.length; dy++) {
+                for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                    if (currentPiece[dy][dx]) {
+                        let nx = x + dx, ny = y + dy;
+                        if (nx<0 || nx>=10 || ny>=20 || (ny>=0 && grid[ny][nx])) return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        function placePiece() {
+            for (let dy=0; dy<currentPiece.length; dy++) {
+                for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                    if (currentPiece[dy][dx]) {
+                        let nx = x + dx, ny = y + dy;
+                        if (ny >= 0) grid[ny][nx] = 1;
+                    }
+                }
+            }
+            clearLines();
+            newPiece();
+        }
+        
+        function clearLines() {
+            for (let row=19; row>=0; row--) {
+                if (grid[row].every(cell => cell)) {
+                    grid.splice(row, 1);
+                    grid.unshift(Array(10).fill(0));
+                    score += 100;
+                    row++;
+                }
+            }
+            scoreEl.textContent = score;
+        }
+        
+        function rotate() {
+            let rotated = currentPiece[0].map((_, i) => currentPiece.map(row => row[i]).reverse());
+            let oldPiece = currentPiece;
+            currentPiece = rotated;
+            if (collides()) currentPiece = oldPiece;
+            draw();
+        }
+        
+        function moveLeft() { x--; if (collides()) x++; draw(); }
+        function moveRight() { x++; if (collides()) x--; draw(); }
+        function softDrop() { 
+            y++; if (collides()) { y--; placePiece(); } else draw(); 
+        }
+        function hardDrop() {
+            while (!collides()) y++;
+            y--; placePiece();
+        }
+        
+        function togglePause() {
+            paused = !paused;
+            document.getElementById('pauseBtn').textContent = paused ? '▶️ ПРОДОЛЖИТЬ' : '⏸️ ПАУЗА';
+            draw();
+        }
+        
+        function restart() {
+            grid = Array(20).fill().map(() => Array(10).fill(0));
+            score = 0; gameOver = paused = false;
+            document.getElementById('pauseBtn').textContent = '⏸️ ПАУЗА';
+            newPiece(); draw();
+        }
+        
+        function draw() {
+            ctx.fillStyle = 'black'; ctx.fillRect(0, 0, 320, 480);
+            
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+            for (let i=0; i<=10; i++) ctx.line((i*32), 0, (i*32), 480);
+            for (let i=0; i<=20; i++) ctx.line(0, (i*24), 320, (i*24));
+            
+            for (let row=0; row<20; row++) {
+                for (let col=0; col<10; col++) {
+                    if (grid[row][col]) {
+                        ctx.fillStyle = 'gray'; 
+                        ctx.fillRect(col*32, row*24, 31, 23);
+                    }
+                }
+            }
+            
+            if (currentPiece) {
+                for (let dy=0; dy<currentPiece.length; dy++) {
+                    for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                        if (currentPiece[dy][dx]) {
+                            ctx.fillStyle = currentColor;
+                            ctx.fillRect((x+dx)*32, (y+dy)*24, 31, 23);
+                        }
+                    }
+                }
+            }
+            
+            if (paused) {
+                ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(0,0,320,480);
+                ctx.fillStyle = '#ff6b6b'; ctx.font = 'bold 48px Arial'; ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle'; ctx.fillText('ПАУЗА ||', 160, 240);
+            }
+            
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillRect(0,0,320,480);
+                ctx.fillStyle = 'red'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle'; ctx.fillText('Ты проиграл!', 160, 200);
+                ctx.fillStyle = 'orange'; ctx.font = '28px Arial'; ctx.fillText('Давай попробуем снова', 160, 260);
+                ctx.fillStyle = 'white'; ctx.font = '24px Arial'; ctx.fillText(`Счёт: ${score}`, 160, 320);
+            }
+        }
+        
+        function gameLoop(time) {
+            if (!paused && !gameOver) {
+                if (time - lastTime > speed) {
+                    softDrop(); lastTime = time;
+                }
+            }
+            draw(); requestAnimationFrame(gameLoop);
+        }
+        
+        canvas.addEventListener('touchstart', e => {
+            let touch = e.touches[0]; let rect = canvas.getBoundingClientRect();
+            let xTouch = (touch.clientX - rect.left) / 32 | 0;
+            if (xTouch < 3) moveLeft(); else if (xTouch > 6) moveRight(); else rotate();
+        });
+        
+        newPiece();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
