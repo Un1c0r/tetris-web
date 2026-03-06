@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>🚀 Тетрис</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { 
+            margin: 0; padding: 20px; 
+            background: #0f0f23; 
+            color: white; 
+            font-family: Arial; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+        }
+        canvas { border: 2px solid #4ecdc4; background: black; }
+        .controls { margin: 10px 0; }
+        button { 
+            background: #4ecdc4; color: black; 
+            border: none; padding: 12px 20px; 
+            margin: 2px; border-radius: 8px; 
+            font-weight: bold; font-size: 16px;
+        }
+        .score { font-size: 24px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="score">Счёт: <span id="score">0</span></div>
+    <canvas id="game" width="300" height="500"></canvas>
+    <div class="controls">
+        <button onclick="moveLeft()">←</button>
+        <button onclick="softDrop()">↓</button>
+        <button onclick="rotate()">↻</button>
+        <button onclick="moveRight()">→</button>
+        <br>
+        <button onclick="hardDrop()" style="background: #ff6b6b;">💥 ПАДЕНИЕ</button>
+        <button onclick="togglePause()" id="pauseBtn">⏸️ ПАУЗА</button>
+        <button onclick="restart()" style="background: #4ecdc4;">🔄 Новая игра</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Полноэкранный режим
+        
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        
+        // Игра
+        let grid = Array(20).fill().map(() => Array(10).fill(0));
+        let score = 0;
+        let currentPiece, currentColor, x, y;
+        let dropTime = 0, lastTime = 0;
+        let paused = false, gameOver = false;
+        
+        const pieces = [
+            [[1,1,1,1]], // I
+            [[1,1,1],[0,1,0]], // T
+            [[1,1],[1,1]], // O
+            [[0,1,1],[1,1,0]], // Z
+            [[1,1,0],[0,1,1]], // S
+            [[1,0,0],[1,1,1]], // J
+            [[0,0,1],[1,1,1]]  // L
+        ];
+        const colors = ['cyan','magenta','yellow','red','green','blue','orange'];
+        
+        function newPiece() {
+            currentPiece = pieces[Math.floor(Math.random()*pieces.length)];
+            currentColor = colors[Math.floor(Math.random()*colors.length)];
+            x = 3; y = 0;
+            if (collides()) gameOver = true;
+        }
+        
+        function collides() {
+            for (let dy=0; dy<currentPiece.length; dy++) {
+                for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                    if (currentPiece[dy][dx]) {
+                        let nx = x + dx, ny = y + dy;
+                        if (nx<0 || nx>=10 || ny>=20 || (ny>=0 && grid[ny][nx])) 
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        function placePiece() {
+            for (let dy=0; dy<currentPiece.length; dy++) {
+                for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                    if (currentPiece[dy][dx]) {
+                        let nx = x + dx, ny = y + dy;
+                        if (ny >= 0) grid[ny][nx] = 1;
+                    }
+                }
+            }
+            clearLines();
+            newPiece();
+        }
+        
+        function clearLines() {
+            for (let row=19; row>=0; row--) {
+                if (grid[row].every(cell => cell)) {
+                    grid.splice(row, 1);
+                    grid.unshift(Array(10).fill(0));
+                    score += 100;
+                    row++; // Проверить строку снова
+                }
+            }
+            scoreEl.textContent = score;
+        }
+        
+        function rotate() {
+            let rotated = currentPiece[0].map((_, i) => 
+                currentPiece.map(row => row[i]).reverse()
+            );
+            let oldPiece = currentPiece;
+            currentPiece = rotated;
+            if (collides()) currentPiece = oldPiece;
+            draw();
+        }
+        
+        function moveLeft() { x--; if (collides()) x++; draw(); }
+        function moveRight() { x++; if (collides()) x--; draw(); }
+        function softDrop() { 
+            y++; 
+            if (collides()) { y--; placePiece(); } 
+            else draw(); 
+        }
+        function hardDrop() {
+            while (!collides()) y++;
+            y--;
+            placePiece();
+        }
+        
+        function togglePause() {
+            paused = !paused;
+            document.getElementById('pauseBtn').textContent = paused ? '▶️ ПРОДОЛЖИТЬ' : '⏸️ ПАУЗА';
+            draw();
+        }
+        
+        function restart() {
+            grid = Array(20).fill().map(() => Array(10).fill(0));
+            score = 0;
+            gameOver = paused = false;
+            document.getElementById('pauseBtn').textContent = '⏸️ ПАУЗА';
+            newPiece();
+            draw();
+        }
+        
+        function draw() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Сетка
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let x=0; x<=10; x++) ctx.strokeRect(x*30, 0, 0, 600);
+            for (let y=0; y<=20; y++) ctx.strokeRect(0, y*25, 300, 0);
+            
+            // Блоки
+            for (let row=0; row<20; row++) {
+                for (let col=0; col<10; col++) {
+                    if (grid[row][col]) {
+                        ctx.fillStyle = 'gray';
+                        ctx.fillRect(col*30, row*25, 29, 24);
+                    }
+                }
+            }
+            
+            // Текущая фигура
+            if (currentPiece) {
+                for (let dy=0; dy<currentPiece.length; dy++) {
+                    for (let dx=0; dx<currentPiece[dy].length; dx++) {
+                        if (currentPiece[dy][dx]) {
+                            ctx.fillStyle = currentColor;
+                            ctx.fillRect((x+dx)*30, (y+dy)*25, 29, 24);
+                        }
+                    }
+                }
+            }
+            
+            if (paused) {
+                ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                ctx.fillRect(0, 0, 300, 500);
+                ctx.fillStyle = '#ff6b6b';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('ПАУЗА ||', 150, 250);
+            }
+            
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0,0,0,0.9)';
+                ctx.fillRect(0, 0, 300, 500);
+                ctx.fillStyle = 'red';
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Ты проиграл!', 150, 220);
+                ctx.fillStyle = 'orange';
+                ctx.font = '24px Arial';
+                ctx.fillText('Давай попробуем снова', 150, 270);
+                ctx.fillStyle = 'white';
+                ctx.fillText(`Счёт: ${score}`, 150, 320);
+            }
+        }
+        
+        function gameLoop(time) {
+            if (!paused && !gameOver) {
+                if (time - lastTime > 500) {
+                    softDrop();
+                    lastTime = time;
+                }
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Сенсорное управление
+        let touchStartX = 0;
+        canvas.addEventListener('touchstart', e => {
+            touchStartX = e.touches[0].clientX;
+        });
+        canvas.addEventListener('touchend', e => {
+            let touchEndX = e.changedTouches[0].clientX;
+            if (touchEndX < touchStartX - 50) moveRight();
+            if (touchEndX > touchStartX + 50) moveLeft();
+        });
+        
+        tg.MainButton.setText('Поделиться счётom! 🎮').show().onClick(() => {
+            tg.sendData(JSON.stringify({score: score}));
+        });
+        
+        newPiece();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
